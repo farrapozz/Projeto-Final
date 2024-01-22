@@ -1,0 +1,192 @@
+import getpass
+import re
+import sys
+import subprocess
+
+
+def criar_bridge():
+        nome_bridge = input("Digite o nome da bridge: ")
+
+        try:
+            # Comando para criar a bridge
+            subprocess.run(f"brctl addbr {nome_bridge}", shell=True, check=True)
+
+            # Comando para colocar a bridge para cima (UP)
+            subprocess.run(f"ip link set up dev {nome_bridge}", shell=True, check=True)
+
+            print(f"Ponte {nome_bridge} criada e configurada com sucesso.")
+
+        except subprocess.CalledProcessError as e:
+            print(f"Erro ao criar/configurar a ponte: {e}")
+
+
+def configurar_ip():
+    nome_bridge = input("Digite o nome da bridge: ")
+    endereco_ip = input("Digite o endereço IP e a máscara (ex: 192.168.1.1/24): ")
+
+    try:
+        # Comando para adicionar o endereço IP à bridge
+        subprocess.run(f"ip address add {endereco_ip} dev {nome_bridge}", shell=True, check=True)
+        print(f"Endereço IP {endereco_ip} configurado para a ponte {nome_bridge}.")
+
+    except subprocess.CalledProcessError as e:
+        print(f"Erro ao configurar o endereço IP: {e}")
+
+def listar_interfaces():
+    try:
+        resultado = subprocess.run(['ifconfig', '-a'], capture_output=True, text=True, check=True)
+
+        linhas = resultado.stdout.split('\n')
+        print("{:<10} {:<15} {:<15} {:<6} {:<17} {:<12} {:<12}".format("Interface", "IP", "Netmask", "MTU", "MAC",
+                                                                           "RX packets", "TX packets"))
+
+        try:
+            resultado = subprocess.run(['ip', 'addr', 'show'], capture_output=True, text=True, check=True)
+
+            # Dividir a saída em linhas e filtrar apenas as linhas que contêm informações relevantes
+            linhas = resultado.stdout.split('\n')
+            interfaces_info = [linha for linha in linhas if 'inet ' in linha or 'link/ether ' in linha]
+
+            # Imprimir cabeçalho
+            print("{:<5} {:<15} {:<17} {:<5} {}".format("Intf", "IP address", "MAC", "MTU", "State"))
+
+            # Imprimir informações de cada interface formatada
+            for info in interfaces_info:
+                partes = info.split()
+                intf = partes[1]
+                ip_address = partes[2]
+                mac_address = partes[-3]
+                mtu = partes[-1]
+                estado = "UP" if 'UP' in partes else "DOWN"
+
+                # Imprimir informações formatadas
+                print("{:<5} {:<15} {:<17} {:<5} {}".format(intf, ip_address, mac_address, mtu, estado))
+
+                # Adicionar informações da bridge e IP se a interface for uma bridge
+                if "br-" in intf:
+                    print("\nInformações da Bridge:")
+                    try:
+                        # Obter informações da bridge
+                        subprocess.run(['brctl', 'show', intf], check=True)
+
+                        # Obter informações de endereço IP da bridge
+                        subprocess.run(['ip', 'address', 'show', 'dev', intf], check=True)
+
+                    except subprocess.CalledProcessError as e:
+                        print(f"Erro ao obter informações da bridge {intf}: {e}")
+
+        except subprocess.CalledProcessError as e:
+            print(f"Erro ao listar interfaces: {e}")
+
+    except subprocess.CalledProcessError as e:
+        print(f"Erro ao executar comando: {e}")
+
+def listar_rotas():
+    try:
+        resultado = subprocess.run(['ip', 'route', 'show'], capture_output=True, text=True, check=True)
+
+        # Imprimir cabeçalho
+        print("{:<16} {:<15} {:<18} {}".format("Route", "Gateway", "Source", "Interface", "Bridges"))
+
+        linhas = resultado.stdout.split('\n')
+        for linha in linhas:
+            if not linha.strip():
+                continue
+
+            partes = linha.split()
+            if len(partes) >= 3:
+                route = partes[0]
+                gateway = partes[2] if partes[1] == 'via' else 'N/A'
+                source = partes[7] if len(partes) > 7 and partes[6] == 'src' else 'N/A'
+                interface = partes[-1]
+
+                # Imprimir informações formatadas
+                print("{:<16} {:<15} {:<18} {}".format(route, gateway, source, interface, ))
+
+    except subprocess.CalledProcessError as e:
+        print(f"Erro ao listar rotas: {e}")
+
+def sair_login():
+    print("Tchau!")
+    sys.exit(0)     # Encerrar o programa
+
+def menu_login():
+    while True:
+        comando = input("Digite um comando ou 'sair' para sair: ")
+
+        if comando == 'Show interface':
+            listar_interfaces()
+        elif comando == 'Show routes':
+            listar_rotas()
+        elif comando == 'Bridge':
+            criar_bridge()
+        elif comando == 'IP':
+            configurar_ip()
+        elif comando == 'Exit':
+            sair_login()
+        else:
+            print("Comando inválido. Tente novamente!")
+
+# verificar se o campo está vazio
+def validate_not_empty(campo, nome_campo):
+    if not campo:
+        print(f"Erro: O {nome_campo} não pode estar vazio.")
+        return False
+    return True
+
+# verificar se contêm apenas letras e números
+def validate_alfanumerico(campo, nome_campo):
+    if not campo.isalnum():
+        print(f"Erro: O {nome_campo} deve conter apenas letras e números")
+        return False
+    return True
+
+# remover espaços em branco
+def sanitizar_remover_espacos(campo):
+    return campo.strip()
+
+# remover caracteres especiais
+def sanitizar_remover_caracteres_especiais(campo):
+    return re.sub(r'[^\w\s]', '', campo)
+
+# LOGIN
+def login_ad():
+    # Informações de Login
+    username_correto = "Admin"
+    password_correto = "Password"
+
+    # Solicitar nome de usuário e senha
+    username_digitado = input("Login: ")
+
+    # Validar e sanitizar username
+    if not validate_not_empty(username_digitado, username_correto):
+        return False
+
+    if not validate_alfanumerico(username_digitado, username_correto):
+        return False
+
+    # remover espaços em branco
+    username_digitado = sanitizar_remover_espacos(username_digitado)
+
+    password_digitado = getpass.getpass("Password: ")
+
+    # Validar e sanitizar senha
+    if not validate_not_empty(password_digitado, password_correto):
+        return False
+
+    # Remover espaços em branco da senha
+    password_digitado = sanitizar_remover_espacos(password_digitado)
+
+    # Remover caracteres especiais da senha
+    password_digitado = sanitizar_remover_caracteres_especiais(password_digitado)
+
+    # Verificar credenciais
+    if username_digitado == username_correto and password_digitado == password_correto:
+        print("### Welcome to config linux network system ###")
+        return True
+    else:
+        print("Login incorreto. Tente novamente.")
+        return False
+
+if login_ad():
+    menu_login()
